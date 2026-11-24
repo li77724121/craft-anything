@@ -623,7 +623,13 @@ impl AiHub {
                 .with_remediation("Give the server's address, like http://192.168.1.20:11434/v1."));
         }
         let key = key.map(|k| k.trim().to_string()).filter(|k| !k.is_empty());
-        let kind = if anthropic::is_anthropic_api(address) { BackendKind::Anthropic } else { BackendKind::OpenaiCompatible };
+        let kind = if anthropic::is_anthropic_api(address) {
+            BackendKind::Anthropic
+        } else if openai::is_openrouter_api(address) {
+            BackendKind::Openrouter
+        } else {
+            BackendKind::OpenaiCompatible
+        };
         let (asked_name, asked_address, asked_key) = (name.to_string(), address.to_string(), key.clone());
         let listed = until_cancelled(cancel, move || {
             if kind == BackendKind::Anthropic {

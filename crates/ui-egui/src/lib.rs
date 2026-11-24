@@ -323,6 +323,21 @@ pub struct ServerForm {
     pub picked: Option<(String, String)>,
 }
 
+impl ServerForm {
+    /// Fill a known service address. A changed destination clears its key and model choice so an
+    /// old credential or model is never sent to the newly selected provider.
+    pub(crate) fn select_preset(&mut self, preset: craft_anything_ai::providers::ConnectionPreset) {
+        if self.address.trim() != preset.base_url {
+            self.model.clear();
+            self.key.clear();
+            self.choices = None;
+            self.picked = None;
+        }
+        self.name = preset.name.to_owned();
+        self.address = preset.base_url.to_owned();
+    }
+}
+
 /// What a file dialog was for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Pick {
