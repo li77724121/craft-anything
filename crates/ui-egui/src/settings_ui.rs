@@ -989,6 +989,36 @@ pub(crate) fn server_form(app: &mut CraftApp, ui: &mut Ui) {
         let r = ui.add(egui::TextEdit::singleline(text).password(secret).hint_text(tr(hint)).desired_width(width).frame(widgets::text_field_frame_compact(&t)));
         widgets::named(r, &tr(name));
     };
+    let presets = craft_anything_ai::providers::CONNECTION_PRESETS;
+    let selected = presets.iter().find(|preset| preset.base_url == form.address.trim()).map(|preset| tr(preset.name));
+    let is_custom = selected.is_none() && !form.address.trim().is_empty();
+    let shown = selected.unwrap_or_else(|| if form.address.trim().is_empty() { tr("Choose a provider") } else { tr("Custom address") });
+    let mut chosen_preset = None;
+    let mut custom_address = false;
+    ui.horizontal(|ui| {
+        ui.label(tr("Provider"));
+        let response = widgets::dropdown("server-provider-preset").selected_text(shown).show_ui(ui, |ui| {
+            for preset in presets {
+                if widgets::menu_item(ui, form.address.trim() == preset.base_url, tr(preset.name)).clicked() {
+                    chosen_preset = Some(*preset);
+                }
+            }
+            if widgets::menu_item(ui, is_custom, tr("Custom address")).clicked() {
+                custom_address = true;
+            }
+        });
+        widgets::named(response.response, "Provider");
+    });
+    if let Some(preset) = chosen_preset {
+        form.select_preset(preset);
+    } else if custom_address {
+        *form = crate::ServerForm::default();
+    }
+    ui.label(
+        RichText::new(tr("Choose a preset to fill in its address, or enter a custom OpenAI-compatible address below. Models are loaded from the provider."))
+            .color(t.text_faint)
+            .size(theme::CAPTION),
+    );
     ui.horizontal(|ui| {
         field(ui, &mut form.name, "name, e.g. Studio box", 150.0, "AI name", false);
         let w = ui.available_width() - FRAME;
@@ -1328,6 +1358,55 @@ mod tests {
     use super::*;
     use crate::{Done, builders::AgentModelPicker, demo, jobs::Finished};
     use craft_anything_ai::{BackendConfig, BackendKind};
+
+    #[test]
+    fn choosing_another_provider_clears_the_previous_key_and_model() {
+        let mut form = crate::ServerForm {
+            name: "Old provider".into(),
+            address: "https://old.example/v1".into(),
+            model: "old-model".into(),
+            key: "old-secret".into(),
+            choices: Some(("https://old.example/v1".into(), vec!["old-model".into()])),
+            picked: Some(("https://old.example/v1".into(), "old-model".into())),
+            ..Default::default()
+        };
+        let preset = craft_anything_ai::providers::CONNECTION_PRESETS.iter().find(|p| p.name.starts_with("Qwen")).copied().unwrap();
+        form.select_preset(preset);
+        assert_eq!(form.name, preset.name);
+        assert_eq!(form.address, preset.base_url);
+        assert!(form.key.is_empty() && form.model.is_empty());
+        assert!(form.choices.is_none() && form.picked.is_none());
+
+        form.key = "kept-secret".into();
+        form.model = "selected-model".into();
+        form.select_preset(preset);
+        assert_eq!(form.key, "kept-secret", "reselecting the same service keeps its entered key");
+        assert_eq!(form.model, "selected-model", "reselecting the same service keeps its model");
+    }
+
+    #[test]
+    fn provider_presets_are_available_from_the_accessible_settings_picker() {
+        use egui_kittest::{Harness, kittest::Queryable};
+        let app = demo::app(demo::engine(craft_anything_engine::Mode::Beginner, false));
+        #[derive(Default)]
+        struct Screen(Option<crate::CraftApp>);
+        impl eframe::App for Screen {
+            fn ui(&mut self, ui: &mut egui::Ui, _: &mut eframe::Frame) {
+                if let Some(app) = self.0.as_mut() {
+                    server_form(app, ui);
+                }
+            }
+        }
+        let mut harness = Harness::builder().build_eframe(|cc| {
+            crate::CraftApp::setup_context(&cc.egui_ctx);
+            Screen(Some(app))
+        });
+        harness.get_by_role_and_label(egui::accesskit::Role::ComboBox, "Provider").click();
+        harness.run_steps(2);
+        for name in ["Ollama (this computer)", "OpenRouter", "DeepSeek", "Moonshot / Kimi", "Qwen (Alibaba Cloud, China)", "Doubao (Volcano Engine, China)"] {
+            assert!(harness.query_by_label(name).is_some(), "missing provider preset {name}");
+        }
+    }
 
     /// Settings that couldn't be loaded say so where the person is looking, with the file's name.
     #[test]

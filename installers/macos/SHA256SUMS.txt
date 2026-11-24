@@ -1,0 +1,1 @@
+0ec6aeaafe5e0324a36a7cee9f63f37ad9802dbc94fbcf8839314ff9df7fbcde  installers/macos/craft-anything-0.6.1-macos-aarch64.dmg

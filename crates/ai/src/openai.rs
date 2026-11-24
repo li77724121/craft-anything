@@ -38,6 +38,13 @@ pub fn is_opencode_go(base: &str) -> bool {
     https_host_path(base).is_some_and(|(host, path)| host.eq_ignore_ascii_case("opencode.ai") && (path == "inference/go" || path.starts_with("inference/go/")))
 }
 
+/// Whether a service address is one of OpenRouter's OpenAI-compatible API endpoints.
+pub fn is_openrouter_api(base: &str) -> bool {
+    https_host_path(base).is_some_and(|(host, path)| {
+        matches!(host.to_ascii_lowercase().as_str(), "openrouter.ai" | "us.openrouter.ai" | "eu.openrouter.ai") && path.trim_end_matches('/') == "api/v1"
+    })
+}
+
 /// An https address's host (without user or port) and path; `None` for any other scheme.
 pub(crate) fn https_host_path(base: &str) -> Option<(&str, &str)> {
     let base = base.trim().trim_end_matches('/');
@@ -1190,6 +1197,18 @@ mod tests {
         assert!(!is_opencode_go("https://opencode.ai/inference/go-v2/v1"));
         assert!(!is_opencode_go("http://opencode.ai/inference/go/v1"));
         assert!(!is_opencode_go("https://openrouter.ai/api/v1"));
+    }
+
+    #[test]
+    fn openrouter_api_presets_are_recognised_without_matching_lookalikes() {
+        for base in [OPENROUTER_BASE, "https://openrouter.ai/api/v1/", "https://us.openrouter.ai/api/v1", "https://eu.openrouter.ai/api/v1"] {
+            assert!(is_openrouter_api(base), "{base}");
+        }
+        for base in
+            ["http://openrouter.ai/api/v1", "https://openrouter.ai.evil.test/api/v1", "https://example.test/openrouter.ai/api/v1", "https://openrouter.ai/v1"]
+        {
+            assert!(!is_openrouter_api(base), "{base}");
+        }
     }
 
     #[test]

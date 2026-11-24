@@ -3,6 +3,26 @@
 
 use crate::BackendKind;
 
+/// Known OpenAI-compatible services available from Settings → AI. The list intentionally stores
+/// endpoints rather than model ids: the form asks each service for its current chat models.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ConnectionPreset {
+    pub name: &'static str,
+    pub base_url: &'static str,
+}
+
+/// Quick setup choices for local model servers and hosted services. Custom OpenAI-compatible
+/// addresses remain available in the same form.
+pub const CONNECTION_PRESETS: &[ConnectionPreset] = &[
+    ConnectionPreset { name: "Ollama (this computer)", base_url: "http://127.0.0.1:11434/v1" },
+    ConnectionPreset { name: "LM Studio (this computer)", base_url: "http://127.0.0.1:1234/v1" },
+    ConnectionPreset { name: "OpenRouter", base_url: "https://openrouter.ai/api/v1" },
+    ConnectionPreset { name: "DeepSeek", base_url: "https://api.deepseek.com/v1" },
+    ConnectionPreset { name: "Moonshot / Kimi", base_url: "https://api.moonshot.ai/v1" },
+    ConnectionPreset { name: "Qwen (Alibaba Cloud, China)", base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1" },
+    ConnectionPreset { name: "Doubao (Volcano Engine, China)", base_url: "https://ark.cn-beijing.volces.com/api/v3" },
+];
+
 /// One hosted provider, as a row of data rather than a match arm.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Provider {
@@ -171,6 +191,22 @@ mod tests {
         names.sort_unstable();
         names.dedup();
         assert_eq!(names.len(), PROVIDERS.len(), "two providers share a name");
+    }
+
+    #[test]
+    fn connection_presets_are_named_and_have_distinct_addresses() {
+        assert!(CONNECTION_PRESETS.iter().any(|p| p.name == "Ollama (this computer)"));
+        assert!(CONNECTION_PRESETS.iter().any(|p| p.name == "OpenRouter"));
+        assert!(CONNECTION_PRESETS.iter().any(|p| p.name.starts_with("Qwen")));
+        assert!(CONNECTION_PRESETS.iter().any(|p| p.name.starts_with("Doubao")));
+        let mut names: Vec<_> = CONNECTION_PRESETS.iter().map(|p| p.name).collect();
+        names.sort_unstable();
+        names.dedup();
+        assert_eq!(names.len(), CONNECTION_PRESETS.len());
+        let mut addresses: Vec<_> = CONNECTION_PRESETS.iter().map(|p| p.base_url).collect();
+        addresses.sort_unstable();
+        addresses.dedup();
+        assert_eq!(addresses.len(), CONNECTION_PRESETS.len());
     }
 
     /// Two rows must never share a key or a base: one key would be sent to two services.
