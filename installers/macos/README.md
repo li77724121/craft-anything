@@ -1,6 +1,9 @@
-# macOS installer
+# macOS installers
 
-`craft-anything-0.6.1-macos-aarch64.dmg` is the Apple silicon installer for Craft Anything 0.6.1.
+| Version | Installer | Architecture |
+| --- | --- | --- |
+| 0.6.2 | `craft-anything-0.6.2-macos-aarch64.dmg` | Apple silicon |
+| 0.6.1 | `craft-anything-0.6.1-macos-aarch64.dmg` | Apple silicon |
 
 ## Verify
 
@@ -12,5 +15,5 @@ shasum -a 256 -c SHA256SUMS.txt
 
 ## Build and signing
 
-Built from this repository's Craft Anything 0.6.1 source with `packaging/macos/package.sh --arch aarch64`.
-The bundle uses an ad-hoc signature because no Developer ID signing credentials were available; it is not notarized. macOS Gatekeeper may warn or block it when opened. This artifact is provided as a locally built installer, not as a Developer ID signed release.
+Both installers are locally built from their matching Craft Anything source version using `packaging/macos/package.sh --arch aarch64`.
+They use an ad-hoc signature because no Developer ID signing credentials were available; they are not notarized. macOS Gatekeeper may warn or block them when opened. These are local-build installers, not Developer ID signed release artifacts.
