@@ -361,6 +361,67 @@ fn model_options_loading(ui: &mut Ui, backend: &str) {
     });
 }
 
+/// Let people choose which configured AI handles each Craft Anything job, in one place. The
+/// separation of a main model from task-specific routes follows the general pattern in Hermes
+/// Agent's public model-configuration guide; the routes here are Craft Anything's own jobs:
+/// https://hermes-agent.nousresearch.com/docs/user-guide/configuring-models
+fn task_routing_settings(app: &mut CraftApp, ui: &mut Ui) {
+    let t = Tokens::get(ui.ctx());
+    widgets::panel(&t).show(ui, |ui| {
+        widgets::caption(ui, "Task routing");
+        ui.label(
+            RichText::new(tr("Choose which AI answers questions, builds projects, and extracts game files. Automatic choices keep Craft Anything's defaults."))
+                .color(t.text_faint)
+                .size(theme::CAPTION),
+        );
+        ui.add_space(theme::space::SM);
+
+        let enabled: Vec<String> = app.backends.iter().filter(|backend| backend.enabled).map(|backend| backend.name.clone()).collect();
+        let extractors: Vec<String> =
+            app.backends.iter().filter(|backend| backend.enabled && backend.kind != BackendKind::AgentCli).map(|backend| backend.name.clone()).collect();
+
+        let answer = routing_picker(ui, "ai-route-answer", "Answers and explanations", "Built-in engines", app.state.backend.as_deref(), &enabled);
+        let builder = routing_picker(ui, "ai-route-builder", "Project builder", "Automatic", app.builder.as_deref(), &enabled);
+        let extractor = routing_picker(ui, "ai-route-extractor", "Game file extractor", "Off", app.extractor.as_deref(), &extractors);
+
+        if let Some(name) = answer {
+            app.choose_backend(name);
+        }
+        if let Some(name) = builder {
+            app.set_role(craft_anything_ai::Role::Builder, name);
+        }
+        if let Some(name) = extractor {
+            app.set_role(craft_anything_ai::Role::Extractor, name);
+        }
+    });
+    ui.add_space(theme::space::MD);
+}
+
+/// A labelled selector whose `None` value means the documented default for that job.
+fn routing_picker(ui: &mut Ui, id: &'static str, label: &str, default: &str, selected: Option<&str>, options: &[String]) -> Option<Option<String>> {
+    let mut change = None;
+    ui.horizontal_wrapped(|ui| {
+        ui.vertical(|ui| {
+            ui.set_width(190.0);
+            ui.label(tr(label));
+        });
+        let shown = selected.map(str::to_owned).unwrap_or_else(|| tr(default));
+        let response = widgets::dropdown(id).selected_text(shown).show_ui(ui, |ui| {
+            if widgets::menu_item(ui, selected.is_none(), tr(default)).clicked() && selected.is_some() {
+                change = Some(None);
+            }
+            for name in options {
+                if widgets::menu_item(ui, selected == Some(name.as_str()), name).clicked() && selected != Some(name.as_str()) {
+                    change = Some(Some(name.clone()));
+                }
+            }
+        });
+        widgets::named(response.response, &tr(label));
+    });
+    ui.add_space(theme::space::XS);
+    change
+}
+
 /// Draw AI settings and model pickers, preserving drafts during contention and invalidating confirmed context changes.
 /// Connection checks are delegated to the shared worker API.
 fn ai(app: &mut CraftApp, ui: &mut Ui) {
@@ -370,12 +431,13 @@ fn ai(app: &mut CraftApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
     crate::engine_ui::assets_settings(app, ui);
     ui.add_space(theme::space::LG);
-    widgets::caption(ui, "Your brains");
+    widgets::caption(ui, "AI connections");
     ui.add_space(theme::space::XS);
     if app.backends.is_empty() {
         ui.label(RichText::new(tr("No AI is set up yet. The built-in engines still work; an AI adds plain-words answers.")).color(t.text_dim));
     }
-    let (mut pick, mut builds, mut extracts, mut toggle, mut remove) = (None, None, None, None, None);
+    task_routing_settings(app, ui);
+    let (mut toggle, mut remove) = (None, None);
     let (mut choose_program, mut usual_program, mut use_program) = (None, None, None);
     let mut check_agent = None;
     let mut save_folder = None;
@@ -741,31 +803,6 @@ fn ai(app: &mut CraftApp, ui: &mut Ui) {
             }
             ui.add_space(theme::space::MD);
             ui.horizontal_wrapped(|ui| {
-                if app.state.backend.as_ref() != Some(&b.name) && widgets::secondary(ui, None, "Use").clicked() {
-                    pick = Some(b.name.clone());
-                }
-                // Who builds: the chosen one says so (click to go back to automatic).
-                if app.builder.as_ref() == Some(&b.name) {
-                    if widgets::secondary(ui, Some("hammer"), "Builds").on_hover_text(tr("Builds use this one. Click to choose automatically again.")).clicked()
-                    {
-                        builds = Some(None);
-                    }
-                } else if b.enabled && widgets::secondary(ui, None, "Build with this").clicked() {
-                    builds = Some(Some(b.name.clone()));
-                }
-                // Who takes a game's files out in Deep mode (an API backend, e.g. Kimi K3).
-                if b.kind != BackendKind::AgentCli {
-                    if app.extractor.as_ref() == Some(&b.name) {
-                        if widgets::secondary(ui, Some("package"), "Extracts")
-                            .on_hover_text(tr("In Deep mode this one takes a game's own files out after the study. Click to stop."))
-                            .clicked()
-                        {
-                            extracts = Some(None);
-                        }
-                    } else if b.enabled && widgets::secondary(ui, None, "Extract with this").clicked() {
-                        extracts = Some(Some(b.name.clone()));
-                    }
-                }
                 if b.kind == BackendKind::AgentCli && b.ssh_host.as_deref().is_none_or(|host| host.trim().is_empty()) {
                     let pending = app.agent_connections.get(&b.name) == Some(&None);
                     ui.add_enabled_ui(!pending, |ui| {
@@ -877,15 +914,6 @@ fn ai(app: &mut CraftApp, ui: &mut Ui) {
     if let Some(name) = remove {
         ui.data_mut(|d| d.remove::<String>(confirm_id));
         app.remove_backend(&name);
-    }
-    if let Some(p) = pick {
-        app.choose_backend(Some(p));
-    }
-    if let Some(b) = builds {
-        app.set_role(craft_anything_ai::Role::Builder, b);
-    }
-    if let Some(e) = extracts {
-        app.set_role(craft_anything_ai::Role::Extractor, e);
     }
     ui.add_space(theme::space::SM);
     let detected = app.detected.clone().unwrap_or_default();
@@ -1382,6 +1410,44 @@ mod tests {
         form.select_preset(preset);
         assert_eq!(form.key, "kept-secret", "reselecting the same service keeps its entered key");
         assert_eq!(form.model, "selected-model", "reselecting the same service keeps its model");
+    }
+
+    #[test]
+    fn task_routes_are_labeled_and_offer_the_craft_defaults() {
+        use egui_kittest::{Harness, kittest::Queryable};
+        let mut app = demo::app(demo::engine(craft_anything_engine::Mode::Beginner, false));
+        app.backends = vec![BackendConfig {
+            name: "Test AI".into(),
+            kind: BackendKind::OpenaiCompatible,
+            model: "test-model".into(),
+            base_url: Some("http://127.0.0.1:11434/v1".into()),
+            ssh_host: None,
+            enabled: true,
+        }];
+        #[derive(Default)]
+        struct Screen(Option<crate::CraftApp>);
+        impl eframe::App for Screen {
+            fn ui(&mut self, ui: &mut egui::Ui, _: &mut eframe::Frame) {
+                if let Some(app) = self.0.as_mut() {
+                    task_routing_settings(app, ui);
+                }
+            }
+        }
+        let mut harness = Harness::builder().build_eframe(|cc| {
+            crate::CraftApp::setup_context(&cc.egui_ctx);
+            Screen(Some(app))
+        });
+        for label in ["Answers and explanations", "Project builder", "Game file extractor"] {
+            assert!(harness.query_by_role_and_label(egui::accesskit::Role::ComboBox, label).is_some(), "missing route control {label}");
+        }
+        harness.get_by_role_and_label(egui::accesskit::Role::ComboBox, "Project builder").click();
+        harness.run_steps(2);
+        assert!(harness.query_by_label("Automatic").is_some());
+        harness.get_by_role_and_label(egui::accesskit::Role::ComboBox, "Answers and explanations").click();
+        harness.run_steps(2);
+        harness.get_by_label("Test AI").click();
+        harness.run_steps(2);
+        assert_eq!(harness.state().0.as_ref().unwrap().state.backend.as_deref(), Some("Test AI"));
     }
 
     #[test]
